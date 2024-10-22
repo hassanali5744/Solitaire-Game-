@@ -1,0 +1,499 @@
+#include <iostream>
+#include <stack>
+#include <list>
+#include <ctime>
+#include <cstdlib>
+#include <cstring>
+#include <windows.h>  
+using namespace std;
+
+enum Suit { HEART, SPADE, CLUB, DIAMOND };
+enum Rank { ACE = 1, TWO, THREE, FOUR, FIVE, SIX, SEVEN, EIGHT, NINE, TEN, JACK, QUEEN, KING };
+
+class Card {
+public:
+    Suit suit;
+    Rank rank;
+    bool faceUp;
+
+    Card() {}
+
+    Card(Suit s, Rank r) : suit(s), rank(r), faceUp(false) {}
+
+    void flip() {
+        faceUp = !faceUp;
+    }
+    void display() const {
+        if (!faceUp) {
+            cout << "??";
+            return;
+        }
+
+        const string redColor = "\033[31m";    // Red color (for Hearts and Diamonds)
+        const string blackColor = "\033[32m";  // Default white/grey (for Spades and Clubs)
+        const string resetColor = "\033[0m";   // Reset to default color
+
+        switch (rank) {
+        case ACE: cout << "A"; break;
+        case JACK: cout << "J"; break;
+        case QUEEN: cout << "Q"; break;
+        case KING: cout << "K"; break;
+        default: cout << rank; break;
+        }
+
+        switch (suit) {
+        case HEART:
+            cout << redColor << u8"\u2665" << resetColor;  
+            break;
+        case DIAMOND:
+            cout << redColor << u8"\u2666" << resetColor; 
+            break;
+        case SPADE:
+            cout << blackColor << u8"\u2660" << resetColor; 
+            break;
+        case CLUB:
+            cout << blackColor << u8"\u2663" << resetColor;
+            break;
+        }
+    }
+
+    string toString() const {
+        if (!faceUp) {
+            return "??"; 
+        }
+
+        string rankStr;
+        switch (rank) {
+        case ACE: rankStr = "A"; break;
+        case JACK: rankStr = "J"; break;
+        case QUEEN: rankStr = "Q"; break;
+        case KING: rankStr = "K"; break;
+        default: cout << rank; break;
+        }
+
+        string suitStr;
+        switch (suit) {
+        case HEART: suitStr = "Hearts"; break;
+        case SPADE: suitStr = "Spades"; break;
+        case CLUB: suitStr = "Clubs"; break;
+        case DIAMOND: suitStr = "Diamonds"; break;
+        }
+
+        return rankStr + " of " + suitStr;
+    }
+};
+
+class List {
+public:
+    list<Card> cards;
+
+    void addCard(const Card& card) {
+        cards.push_back(card);
+    }
+
+    void removeCards(int n) {
+        for (int i = 0; i < n && !cards.empty(); ++i) {
+            cards.pop_back();
+        }
+    }
+
+    void moveTo(List& target, int n) {
+        if (n > 0 && !isEmpty()) {
+            auto it = cards.end();
+            for (int i = 0; i < n; i++) {
+                --it;
+            }
+            for (int i = 0; i < n; ++i) {
+                target.cards.push_back(*it);
+                it = cards.erase(it);   
+            }
+        }
+    }
+
+    void display() {
+        for (auto& card : cards) {
+            card.display();
+            cout << " ";
+        }
+        cout << endl;
+    }
+
+    bool isEmpty() {
+        return cards.empty();
+    }
+
+    Card& topCard() {
+        return cards.back();
+    }
+};
+
+class Stack {
+private:
+    stack<Card> cards;
+public:
+    void push(const Card& card) {
+        cards.push(card);
+    }
+
+    Card pop() {
+        if (!cards.empty()) {
+            Card card = cards.top();
+            cards.pop();
+            return card;
+        }
+        throw std::runtime_error("Stack is empty!");
+    }
+
+    Card top() {
+        return cards.top();
+    }
+
+    bool empty() const {
+        return cards.empty();
+    }
+
+    void display() {
+        if (!cards.empty()) {
+            cards.top().display();
+        }
+        else {
+            cout << "Empty";
+        }
+        cout << endl;
+    }
+};
+class Command {
+public:
+    char action;
+    int src, dst, numCards;
+
+    Command(char a, int s = -1, int d = -1, int n = 1) : action(a), src(s), dst(d), numCards(n) {}
+};
+void shuffleDeck(Card deck[], int size) {
+    for (int i = size - 1; i > 0; --i) {
+        int j = rand() % (i + 1);
+        swap(deck[i], deck[j]);
+    }
+}
+
+class Game {
+private:
+    List table[7];
+    Stack foundation[4];
+    Stack stockpile, wastepile;
+    stack<Command> commandHistory;
+    Card deck[52];
+    int score;
+public:
+    Game() {
+        initializeGame();
+    }
+
+    void initializeGame() {
+        int deckIndex = 0;
+        for (int s = HEART; s <= DIAMOND; ++s) {
+            for (int r = ACE; r <= KING; ++r) {
+                deck[deckIndex++] = Card(static_cast<Suit>(s), static_cast<Rank>(r));
+            }
+        }
+
+        shuffleDeck(deck, 52);
+        deckIndex = 0;
+        score = 0;
+        for (int i = 0; i < 7; ++i) {
+            for (int j = 0; j <= i; ++j) {
+                table[i].addCard(deck[deckIndex++]);
+            }
+            table[i].cards.back().flip();
+        }
+        for (int i=0 ; deckIndex < 52; ++deckIndex) {
+            stockpile.push(deck[deckIndex]);
+        }
+    }
+
+    void drawCard() {
+        if (!stockpile.empty()) {
+            Card drawnCard = stockpile.pop();
+            drawnCard.flip();
+            wastepile.push(drawnCard);
+            cout << "Drew card: " << drawnCard.toString() << "\n";
+        }
+        else {
+            cout << "No cards left in the stockpile!\n";
+        }
+    }
+
+    void moveCards(int src, int dst, int num) {
+        if (src >= 0 && src < 7 && dst >= 0 && dst < 7 && !table[src].isEmpty()) {
+            if (num > 0 && num <= table[src].cards.size()) {
+                Card cardToMove = table[src].topCard();
+                if (table[dst].isEmpty() || (cardToMove.rank == table[dst].topCard().rank - num)) {
+                    table[src].moveTo(table[dst], num);
+                    if (!table[src].isEmpty()) {
+                        table[src].topCard().flip();
+                    }
+                    commandHistory.push(Command('m', src, dst, num));
+                    score += 5;
+                }
+                else {
+                    cout << "Invalid move! Cards must be in descending order." << endl;
+                }
+            }
+            else {
+                cout << "Invalid number of cards to move!" << endl;
+            }
+        }
+        else {
+            cout << "Invalid move!" << endl;
+        }
+    }
+    void moveToFoundation(int src, int n) {
+        Card movingCard;
+        if (src == -1) {
+            if (!wastepile.empty()) {
+                movingCard = wastepile.top();
+                wastepile.pop();
+            }
+            else {
+                cout << "Wastepile is empty!" << endl;
+                return;
+            }
+        }
+        else {
+            if (!table[src].isEmpty()) {
+                movingCard = table[src].topCard();
+                table[src].removeCards(1);
+                if (!table[src].isEmpty()) {
+                    table[src].topCard().flip();
+                }
+            }
+            else {
+                cout << "Table column " << src + 1 << " is empty!" << endl;
+                return;
+            }
+        }
+
+        if (foundation[n].empty()) {
+            if (movingCard.rank == ACE) {
+                foundation[n].push(movingCard);
+                cout << "Moved " << movingCard.toString() << " to foundation " << n + 1 << endl;
+                score += 10;
+            }
+            else {
+                cout << "Only an Ace can be placed in an empty foundation!" << endl;
+            }
+        }
+        else {
+            Card topFoundationCard = foundation[n].top();
+            if (movingCard.suit == topFoundationCard.suit && movingCard.rank == topFoundationCard.rank + 1) {
+                foundation[n].push(movingCard);
+                cout << "Moved " << movingCard.toString() << " to foundation " << n + 1 << endl;
+                score += 10;
+            }
+            else {
+                cout << "Invalid move! Cards must be placed in ascending order by suit in the foundation." << endl;
+            }
+        }
+    }
+
+    void moveWastepileTotable(int dst) {
+        if (!wastepile.empty() && dst >= 0 && dst < 7) {
+            Card wasteCard = wastepile.top();
+            if (table[dst].isEmpty()) {
+                if (wasteCard.rank == KING) {
+                    wastepile.pop();
+                    table[dst].addCard(wasteCard);
+                    commandHistory.push(Command('m', -1, dst, 1));
+                    score += 10;
+                }
+                else {
+                    cout << "Only a King can be placed in an empty column!" << endl;
+                }
+            }
+            else {
+                Card& toptableCard = table[dst].topCard();
+                if (wasteCard.rank == toptableCard.rank - 1) {
+                    wastepile.pop();
+                    table[dst].addCard(wasteCard);
+                    commandHistory.push(Command('m', -1, dst, 1));
+                    score += 10;
+                }
+                else {
+                    cout << "Invalid move! Cards must be placed in descending order." << endl;
+                }
+            }
+        }
+        else {
+            cout << "Wastepile is empty or invalid destination!" << endl;
+        }
+    }
+
+    void undo() {
+        if (!commandHistory.empty()) {
+            Command cmd = commandHistory.top();
+            commandHistory.pop();
+
+            if (cmd.action == 's') {
+                wastepile.pop();
+                score += 1;
+            }
+            else if (cmd.action == 'm') {
+                table[cmd.dst].moveTo(table[cmd.src], cmd.numCards);
+                score -= 5;
+            }
+        }
+        else {
+            cout << "Nothing to undo!" << endl;
+        }
+    }
+    bool gameWon() {
+        for (const auto& f : foundation) {
+            if (f.empty() != KING) {
+                return false;
+            }
+        }
+        return true;
+    }
+    void displayGame() {
+        const string redColor = "\033[34m";
+        const string resetColor = "\033[0m";
+        cout <<"                                                                                                                   SCORE:::: " << score<< endl;  // Display the score
+        cout << "STOCKPILE: ";
+        stockpile.display();
+        cout << "WASTEPILE: ";
+        wastepile.display();
+
+        for (int i = 0; i < 4; ++i) {
+            cout << "FOUNDATION " << i + 1 << "::::: ";
+            foundation[i].display();
+        }
+
+        for (int i = 0; i < 7; ++i) {
+            cout << "COLUMNS " << i + 1 << "::::: ";
+            table[i].display();
+        }
+    }
+
+    void processCommand(char action, int src = -1, int dst = -1, int num = 1) {
+        if (action == 's') {
+            drawCard();
+            commandHistory.push(Command('s'));
+        }
+        else if (action == 'm') {
+            if (src == -1) { 
+                moveWastepileTotable(dst);
+            }
+            else {
+                moveCards(src, dst, num);
+            }
+        }
+        else if (action == 'z') {
+            undo();
+        }
+        if (gameWon()) {
+            cout << "Congratulations! You won the game!" << endl;
+            exit(0);
+        }
+    }
+};
+void displayInstructions() {
+    const string yellowColor = "\033[35m";
+    const string resetColor = "\033[0m";
+    const string yellowColor2 = "\033[33m";
+    cout << yellowColor << "=====================================================================================================================================\n";
+    cout << yellowColor2 << "                                                             Solitaire Game     \n" << resetColor;
+   cout << yellowColor << "=====================================================================================================================================\n" << resetColor;
+   const string yellowColor3 = "\033[38;5;190m";
+   cout <<yellowColor3<< "Objective:\n";
+    cout << "Move all cards to the foundation piles, sorted by suit and in ascending order (Ace to King).\n\n";
+
+    cout << "Card Layout:\n";
+    cout << "1. Stockpile: The deck of remaining cards to draw from.\n";
+    cout << "2. Wastepile: Cards drawn from the stockpile are placed here.\n";
+    cout << "3. Foundation Piles: Four piles for each suit (Hearts, Diamonds, Clubs, Spades).\n";
+    cout << "   - Cards are placed in ascending order, starting with Ace.\n";
+    cout << "4. Table Columns: Seven columns of cards. Only the top card is face-up initially.\n\n";
+
+    cout << "Card Movements:\n";
+    cout << "1. **Draw from Stockpile to Wastepile**:\n";
+    cout << "   - Draw one card from the stockpile to the wastepile.\n";
+    cout << "   - **Command**: `s`\n\n";
+
+    cout << "2. **Move Cards Between Table Columns**:\n";
+    cout << "   - Move a number of cards from one table column to another.\n";
+    cout << "   - **Command**: `m <source_column> <destination_column> <number_of_cards>`\n";
+    cout << "     - Example: `m 1 3 2` will move 2 cards from column 1 to column 3.\n\n";
+
+    cout << "3. **Move Wastepile Card to Table Column**:\n";
+    cout << "   - Move the top card from the wastepile to a table column.\n";
+    cout << "   - **Command**: `m 10 <destination_column>`\n";
+    cout << "     - Example: `m 10 4` will move the top wastepile card to column 4.\n\n";
+
+    cout << "4. **Move Cards to Foundation**:\n";
+    cout << "   - Move the top card from a table column or wastepile to the foundation.\n";
+    cout << "   - **Command**: `f <source_column> <foundation_number>` or `f w <foundation_number>` for wastepile.\n";
+    cout << "     - Example: `f 2 1` moves the top card from column 2 to foundation 1.\n";
+    cout << "     - Example: `f w 3` moves the top card from the wastepile to foundation 3.\n\n";
+
+    cout << "5. **Undo Last Move**:\n";
+    cout << "   - Undo the last move made.\n";
+    cout << "   - **Command**: `z`\n\n";
+
+    cout << "Win Condition:\n";
+    cout << "Move all cards to the four foundation piles in the correct order (Ace to King by suit).\n"<< resetColor;
+    cout << yellowColor << "=====================================================================================================================================\n";
+    cout << yellowColor2 << "                                                             Solitaire Game     \n" << resetColor;
+
+    cout << yellowColor << "=====================================================================================================================================\n" << resetColor;
+}
+    int main() {
+    SetConsoleOutputCP(CP_UTF8);
+    srand(static_cast<unsigned>(time(0))); // Seed for random number generation
+    Game solitaire;
+    displayInstructions();
+    char command;
+    int  src, dst, num;
+
+    while (true) {
+        solitaire.displayGame();
+        cout << "Enter command: ";
+        cin >> command;
+        cout << "=====================================================================================================================================\n";
+        if (command == 'm') {
+            if (cin >> src >> dst >> num) {
+                if (src == 10) {
+                    solitaire.moveWastepileTotable(dst - 1);
+                }
+                else {
+                    solitaire.processCommand(command, src - 1, dst - 1, num);
+                }
+            }
+            else {
+                cout << "Invalid input for move command! Please provide source and destination.\n";
+            }
+        }
+        else if (command == 'f') {
+            if (cin >> src >> dst) {
+                if (src == 10) {
+                    solitaire.moveToFoundation(-1, dst - 1);
+                }
+                else {
+                    solitaire.moveToFoundation(src - 1, dst - 1);
+                }
+            }
+        }
+            else if (command == 's') {
+                solitaire.processCommand(command);
+            }
+            else if (command == 'z') {
+                solitaire.processCommand(command);
+            }
+            else {
+                cout << "Invalid command! Please try again.\n";
+            }
+        }
+
+     
+    
+    return 0;
+}
